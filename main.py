@@ -5,6 +5,7 @@ import sys
 import os
 import typing
 import json
+from datetime import datetime
 from dotenv import load_dotenv  
 from fastapi import FastAPI, File, UploadFile, Query, applications, Body
 from fastapi.responses import StreamingResponse, RedirectResponse
@@ -29,6 +30,7 @@ COM_PORT= os.getenv("COM_PORT")
 BAUDRATE= os.getenv("BAUDRATE")
 PLC_HOST= os.getenv("PLC_HOST")
 PLC_PORT= os.getenv("PLC_PORT")
+LOG_DIR = "Log-Cosmo"
 
 
 class Response(BaseModel):
@@ -43,15 +45,33 @@ class FastAPP(FastAPI):
     serial_protocol: CosmoSerial
 
 
+def csv_generator(data_repot: model.TestDataReport, output_path: str):
+    pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPP):
     global async_lock
     async_lock = asyncio.Lock()
+    os.makedirs(LOG_DIR, exist_ok=True)    
     
     try:
         loop = asyncio.get_running_loop()
+        current_log = {
+            "file": None,
+            "session": None
+        }
         
         def serial_callback(message):
+            session_key = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if current_log["file"] is None:
+                current_log["session"] = session_key
+                current_log["file"] = os.path.join(LOG_DIR, f"cosmo_log_{session_key}.txt")
+            
+            with open(current_log["file"], "a") as file:
+                file.write(f"{datetime.now().isoformat()} - {message}\n")
+            
+            current_log["file"] = None
             asyncio.create_task(get_websocket().emit("cosmo", {"data": message}))
         
         trasport, protocol = await serial_asyncio.create_serial_connection(
