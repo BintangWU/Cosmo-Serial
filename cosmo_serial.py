@@ -7,6 +7,37 @@ import typing
 from pydantic import BaseModel
 
 
+class CosmoModel_ExcessTh(BaseModel):
+    date: str
+    time: str
+    item: int
+    channel: typing.Optional[int] = 1
+    filter: int
+    log_number: int
+    judge_result: str
+    judge_number_type: int
+    judge_type: int
+    summary: str
+
+class CosmoModel_NumberExcessTh(BaseModel):
+    pass
+
+class CosmoModel_DurationExcessTh(BaseModel):
+    pass
+
+class CosmoModel_Attenuation(BaseModel):
+    pass
+
+class CosmoModel_Inclanation(BaseModel):
+    pass
+
+class CosmoModel_Undulation(BaseModel):
+    pass
+
+class CosmoModel_Waveform(BaseModel):
+    pass
+
+# Listening serial incomming data
 class CosmoSerial(asyncio.Protocol):
     def __init__(self, callback= None):
         self.callback = callback
@@ -45,27 +76,40 @@ class CosmoSerial(asyncio.Protocol):
 
 
     def on_timeout(self):
-        data = self.buffer.copy()
-        data = [item.replace('\r', '&&') for item in data if item.strip() != '']
-        data = ''.join(data).split('&&')
-        data.pop()
+        message = self.buffer.copy()
+        message = ''.join(message)        
         
         try:
-            if self.callback:
-                if (len(data) > 1) and (data[-1] == ''):
-                    data.pop()
-                # print(f"Received raw data: {data}")  # Debug: print raw data received
-                
-                message = data
-                self.callback(message) #Callback returns data to handler
+            if message != "" and message is not None:
+                if self.callback:
+                    # print(f"Received2: {data}")  # Debug: print raw data received
+                    self.callback(message) #Callback returns data to handler
         except Exception as e:
             print(f"Error in callback: {e}", file= sys.stderr)
         finally:
             self.buffer.clear()
 
+# ----------------------------------------------------------------------------------------------
+# Untuk Trial 
+# ----------------------------------------------------------------------------------------------
 
 def handler_message(message):
-    print(f"Received message: {message}")
+    msg = message.replace('\x02', '').replace('\x03', '').replace('\n', '').replace('\r', '')
+    msg = msg.split(',')
+    # print(f"Received message: {msg}")
+            
+    cosmo_data = CosmoModel_ExcessTh(
+        date = msg[0][:6],
+        time = msg[0][6:],
+        item= msg[1],
+        channel= msg[2],
+        judge_result= msg[3],
+        log_number= msg[4],
+        filter= msg[5],
+        judge_number_type= msg[6],
+        judge_type= msg[7][:2],
+        summary= msg[7][2:]
+        )
     
 
 def get_valid_baudrate() -> int:
@@ -87,7 +131,9 @@ async def main(comPort: str, baudrate: int):
             loop, 
             lambda: CosmoSerial(callback= handler_message), 
             comPort,
-            baudrate
+            baudrate,
+            parity=serial_asyncio.serial.PARITY_EVEN,
+            stopbits=serial_asyncio.serial.STOPBITS_ONE,
         )
         print(f"Connected to {comPort} at {baudrate} baud.")
         
@@ -98,6 +144,5 @@ async def main(comPort: str, baudrate: int):
             
 if __name__ == "__main__":
     comPort = input("Your Port: ")
-    baudrate = get_valid_baudrate()
-            
+    baudrate = get_valid_baudrate()          
     asyncio.run(main(str(comPort).upper(), int(baudrate)))

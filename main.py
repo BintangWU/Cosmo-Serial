@@ -20,11 +20,13 @@ import socketio
 
 sys.path.insert(0, os.path.dirname(__file__))
 import model
+from csv_log import TestDataReport, MeasurementRow, generate_csv
 from ws_manager import init_websocket, get_websocket
-from cosmo_serial import CosmoSerial
+from cosmo_serial import CosmoSerial, CosmoModel_ExcessTh
 
 load_dotenv()
 async_lock: asyncio.Lock
+cosmo_data: typing.Any = None
 
 COM_PORT= os.getenv("COM_PORT")
 BAUDRATE= os.getenv("BAUDRATE")
@@ -43,11 +45,7 @@ class FastAPP(FastAPI):
     sio: socketio.AsyncServer
     serial_transport: typing.Any
     serial_protocol: CosmoSerial
-
-
-def csv_generator(data_repot: model.TestDataReport, output_path: str):
-    pass
-
+    
 
 @asynccontextmanager
 async def lifespan(app: FastAPP):
@@ -63,26 +61,49 @@ async def lifespan(app: FastAPP):
         }
         
         def serial_callback(message):
+            global cosmo_data
+        
             session_key = datetime.now().strftime("%Y%m%d_%H%M%S")
-            if current_log["file"] is None:
-                current_log["session"] = session_key
-                current_log["file"] = os.path.join(LOG_DIR, f"cosmo_log_{session_key}.txt")
             
-            with open(current_log["file"], "a") as file:
-                file.write(f"{datetime.now().isoformat()} - {message}\n")
+            msg = message.replace('\x02', '').replace('\x03', '').replace('\n', '').replace('\r', '')
+            msg = msg.split(',')
+            # print(f"Received message: {msg}")
             
-            current_log["file"] = None
-            asyncio.create_task(get_websocket().emit("cosmo", {"data": message}))
+            cosmo_data = CosmoModel_ExcessTh(
+                date = msg[0][:6],
+                time = msg[0][6:],
+                item= msg[1],
+                channel= msg[2],
+                judge_result= msg[3],
+                log_number= msg[4],
+                filter= msg[5],
+                judge_number_type= msg[6],
+                judge_type= msg[7][:2],
+                summary= msg[7][2:],
+            )
+            
+            # if current_log["file"] is None:
+            #     current_log["session"] = session_key
+            #     current_log["file"] = os.path.join(LOG_DIR, f"cosmo_log_{session_key}.txt")
+            
+            # with open(current_log["file"], "a") as file:
+            #     file.write(f"{datetime.now().isoformat()} - {message}\n")
+            
+            # current_log["file"] = None
+            asyncio.create_task(get_websocket().emit("cosmo", {"data": cosmo_data.model_dump()}))
         
         trasport, protocol = await serial_asyncio.create_serial_connection(
             loop,
             lambda: CosmoSerial(callback= serial_callback),
             str(COM_PORT).upper(),
             baudrate= int(BAUDRATE),
+            parity= serial_asyncio.serial.PARITY_EVEN,
+            stopbits= serial_asyncio.serial.STOPBITS_ONE,
         )
         
         app.serial_transport = trasport
         app.serial_protocol = protocol
+        
     except Exception as e:
         print(f"Error initializing serial connection: {e}")
         app.serial_transport = None
@@ -126,35 +147,11 @@ if os.path.exists(assets_path + "/swagger-ui.css") and os.path.exists(assets_pat
     
 init_websocket(app, ['*'])
 
-@app.get("/status", response_model=Response, summary="Get Server Status")
-async def get_status():
-    global async_lock
-    
-    async with async_lock:
-        await get_websocket().emit("status", {"status": "Server is running"})
-        return Response(
-            status= True, 
-            message= "Server is running")
 
-
-@app.get("/read-plc-data", response_model=Response, summary="Read data from PLC")
-async def read_config():
-    # Baca data dari PLC
-    return Response(
-        status= True, 
-        message= "success",
-        data= None)
-
-
-@app.post("/save-plc-data", response_model=Response, summary="Save data to PLC")
-async def save_config(config: model.ConfigParams = Body(...)):
-    # Save ke PLC
-    pass   
-
-
-@app.get("/serial-status", response_model=Response, summary="Get Serial Port Status")
+@app.get("/status", response_model=Response, summary="Get Serial Port Status")
 async def serial_status():
     global async_lock
+    serial_status =  True if app.serial_transport and app.serial_protocol else False
     
     async with async_lock:
         if app.serial_transport and app.serial_protocol:
@@ -169,6 +166,7 @@ async def serial_status():
                 message= "Serial port not connected.",
                 data= None
             )
+
 
 @app.post("/serial-config", response_model=Response, summary="Update Serial Port Configuration")
 async def serial_config(body: model.SerialConfig = Body(...)):
