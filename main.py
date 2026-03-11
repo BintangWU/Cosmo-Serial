@@ -16,10 +16,12 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import fastapi_offline_swagger_ui
 import socketio
+import uvicorn
 
 
 sys.path.insert(0, os.path.dirname(__file__))
 import model
+import pyPlc
 from csv_log import TestDataReport, MeasurementRow, generate_csv
 from ws_manager import init_websocket, get_websocket
 from cosmo_serial import CosmoSerial, CosmoModel_ExcessTh
@@ -45,6 +47,7 @@ class FastAPP(FastAPI):
     sio: socketio.AsyncServer
     serial_transport: typing.Any
     serial_protocol: CosmoSerial
+    plc_heartbeat_task: typing.Any = None
     
 
 @asynccontextmanager
@@ -52,6 +55,15 @@ async def lifespan(app: FastAPP):
     global async_lock
     async_lock = asyncio.Lock()
     os.makedirs(LOG_DIR, exist_ok=True)    
+    
+    # Initialize PLC connection and start heartbeat
+    try:
+        await pyPlc.plc_init(PLC_HOST, int(PLC_PORT))
+        app.plc_heartbeat_task = asyncio.create_task(pyPlc.plc_heartbeat())
+        print("PLC heartbeat task started")
+    except Exception as e:
+        print(f"Error initializing PLC: {e}")
+        app.plc_heartbeat_task = None
     
     try:
         loop = asyncio.get_running_loop()
@@ -108,8 +120,18 @@ async def lifespan(app: FastAPP):
         print(f"Error initializing serial connection: {e}")
         app.serial_transport = None
         app.serial_protocol = None
+    
     yield
     
+    # Cleanup: Stop PLC heartbeat task
+    if app.plc_heartbeat_task:
+        app.plc_heartbeat_task.cancel()
+        try:
+            await app.plc_heartbeat_task
+        except asyncio.CancelledError:
+            print("PLC heartbeat task cancelled")
+    
+    # Cleanup: Close serial connection
     if app.serial_transport:
         app.serial_transport.close()    
 
@@ -168,7 +190,7 @@ async def serial_status():
             )
 
 
-@app.post("/serial-config", response_model=Response, summary="Update Serial Port Configuration")
+@app.post("./Config/serial-config", response_model=Response, summary="Update Serial Port Configuration")
 async def serial_config(body: model.SerialConfig = Body(...)):
     global async_lock
     
@@ -180,6 +202,33 @@ async def serial_config(body: model.SerialConfig = Body(...)):
         return Response(
             status= True, 
             message= f"Serial configuration updated to {body.com_port} at {body.baudrate} baud.",
-            data= None)
+            data= None
+            )
+        
+@app.post("/plc-config", response_model=Response, summary="Update PLC Configuration")
+async def plc_config(body: model.PlcConfig = Body(...)):
+    global async_lock
+    
+    async with async_lock:
+        config_data = body.model_dump_json(indent= 4)
+        with open("./Config/plc_cfg.json", "w") as file:
+            file.write(config_data)
+        
+        return Response(
+            status= True, 
+            message= f"PLC configuration updated to {body.ip_address}:{body.port}.",
+            data= None
+            )
+
+# async def server_async():    
+#     server_config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+#     server_run = uvicorn.Server(server_config)
+#     return await server_run.serve()
 
 
+# async def main():
+#     await pyPlc.plc_init(PLC_HOST, int(PLC_PORT))
+#     asyncio.create_task(pyPlc.plc_heartbeat())
+    
+# if __name__ == "__main__":
+#     asyncio.run(server_async())

@@ -10,4 +10,9 @@ class ConfigParams(BaseModel):
 class SerialConfig(BaseModel):
     com_port: str
     baudrate: int
+    
+    
+class PlcConfig(BaseModel):
+    ip_address: str
+    port: int
 
