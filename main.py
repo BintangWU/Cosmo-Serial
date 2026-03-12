@@ -170,6 +170,12 @@ if os.path.exists(assets_path + "/swagger-ui.css") and os.path.exists(assets_pat
 init_websocket(app, ['*'])
 
 
+@app.get("/health", summary="Health Check for Docker")
+async def health_check():
+    """Simple health check endpoint for Docker container monitoring."""
+    return {"status": "healthy", "service": "cosmo-serial"}
+
+
 @app.get("/status", response_model=Response, summary="Get Serial Port Status")
 async def serial_status():
     global async_lock

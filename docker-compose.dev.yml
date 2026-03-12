@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  cosmo-serial-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: cosmo-serial-dev
+    
+    # Port mapping
+    ports:
+      - "8000:8000"
+    
+    # Environment variables
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Jakarta
+      - RELOAD=true  # Enable hot reload
+    
+    # Development: mount source code for live reload
+    volumes:
+      - .:/app
+      - /app/.venv  # Exclude venv
+      - /app/__pycache__  # Exclude cache
+    
+    # Serial port (modify based on your setup)
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    
+    # Network
+    networks:
+      - cosmo-network
+    
+    extra_hosts:
+      - "infinitigroup:172.16.100.183"
+      - "plc-host:172.16.100.100"
+    
+    # Development command with auto-reload
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    
+    # stdin open for debugging
+    stdin_open: true
+    tty: true
+
+networks:
+  cosmo-network:
+    driver: bridge
