@@ -1,7 +1,11 @@
+import os
+import sys
+import smbclient
 import csv
 from pydantic import BaseModel
 from typing import List
-
+from dotenv import load_dotenv  
+load_dotenv()
 
 class MeasurementRow(BaseModel):
     step: int
@@ -37,9 +41,61 @@ class TestDataReport(BaseModel):
     measurements: List[MeasurementRow] = []
     
 
-def generate_csv(report: TestDataReport, output_path: str):
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f, quoting=csv.QUOTE_ALL)
+NAS_IP = os.getenv("NAS_IP")
+NAS_SHARE_FOLDER = os.getenv("NAS_SHARE_FOLDER")
+NAS_USERNAME = os.getenv("NAS_USERNAME", default="infinitigroup")
+NAS_PASSWORD = os.getenv("NAS_PASSWORD", default="Changeyourpwd36689")
+LOG_DIR_NAME = os.getenv("LOG_DIR_NAME", default="Log_Cosmo_Infiniti")
+
+_nas_initialized: bool = False
+
+
+def log_init() -> bool:
+    global _nas_initialized
+    
+    if not _nas_initialized:
+        try:
+            smbclient.register_session(
+                server=NAS_IP,
+                username=NAS_USERNAME,
+                password=NAS_PASSWORD,
+            )
+            _nas_initialized = True
+            return True
+            
+        except Exception as e:
+            _nas_initialized = False
+            return False
+
+
+def log_get_path(custom_path: str = "") -> str:
+    if custom_path:
+        return rf"\\{NAS_IP}\{NAS_SHARE_FOLDER}\{custom_path.lstrip('\\/')}" 
+    return rf"\\{NAS_IP}\{NAS_SHARE_FOLDER}"
+
+
+def log_dir_exist(dir_name: str) -> bool:
+    # log_init()
+    full_path = dir_name if dir_name.startswith("\\\\") else log_get_path(dir_name)
+    return smbclient.path.exists(full_path)
+
+
+def log_mkdir(dir_name: str) -> bool:
+    # log_init()
+    full_path = dir_name if dir_name.startswith("\\\\") else log_get_path(dir_name)
+    if not log_dir_exist(dir_name):
+        smbclient.mkdir(full_path)
+        return True
+    return False
+
+
+def log_write_csv(report: TestDataReport, output_path: str):
+    # log_init()
+    full_path = output_path if output_path.startswith("\\\\") else log_get_path(output_path)
+    
+    with smbclient.open_file(full_path, "w") as file:    
+    # with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(file, quoting=csv.QUOTE_ALL)
 
         # ── Title row ─────────────────────────────────────
         writer.writerow(["Display test data report"])
@@ -113,11 +169,10 @@ def generate_csv(report: TestDataReport, output_path: str):
                 m.final_judge,
                 ""
             ])
-
-    # print(f"✅ CSV file generated: {output_path}")
     
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
+    log_init()  
     report = TestDataReport(
         line_name         = "4A9",
         stand_no          = "1",
@@ -150,5 +205,5 @@ if __name__ == "__main__":
         MeasurementRow(step=12, no=10, limit_index="Manual Judge", meas_no=11, item="Engine TEMP", low=0.0, high=50.0, unit="degC", initial_value="   31.3", initial_judge="OK", final_value="   31.3", final_judge="OK"),
     ]
     
-    filename = f"{report.engine_type}_{report.engine_number}_{report.date.replace('/', '')}_{report.time.replace(':', '')}.csv"
-    generate_csv(report, filename)
+    filename = f"/{LOG_DIR_NAME}/{report.engine_type}_{report.engine_number}_{report.date.replace('/', '')}_{report.time.replace(':', '')}.csv"
+    log_write_csv(report, filename)

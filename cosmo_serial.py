@@ -37,7 +37,7 @@ class CosmoModel_Undulation(BaseModel):
 class CosmoModel_Waveform(BaseModel):
     pass
 
-# Listening serial incomming data
+
 class CosmoSerial(asyncio.Protocol):
     def __init__(self, callback= None):
         self.callback = callback
@@ -65,7 +65,6 @@ class CosmoSerial(asyncio.Protocol):
     def data_received(self, data):
         msg = data.decode('utf-8')
         if msg:
-            # print(f"Received raw data: {msg}")  # Debug: print raw data received
             msg = msg.replace('\n', '')
             self.buffer.append(msg)
             
