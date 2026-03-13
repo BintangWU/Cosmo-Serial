@@ -4,8 +4,10 @@ import json
 import asyncio
 import serial_asyncio
 import typing
+import logging
 from pydantic import BaseModel
 
+log = logging.getLogger('cosmo-serial')
 
 class CosmoModel_ExcessTh(BaseModel):
     date: str
@@ -48,18 +50,18 @@ class CosmoSerial(asyncio.Protocol):
     def connection_made(self, transport):
         """Called when serial connection is established"""
         self.transport = transport
-        print(f"✓ Serial port opened successfully", file=sys.stderr)
-        print(f"✓ Connected to: {transport.serial.port}", file=sys.stderr)
-        print(f"✓ Baudrate: {transport.serial.baudrate}", file=sys.stderr)
-        print(f"✓ Waiting for data...", file=sys.stderr)
-    
+        log.info(f"✓ Serial port opened successfully")
+        log.info(f"✓ Connected to: {transport.serial.port}")
+        log.info(f"✓ Baudrate: {transport.serial.baudrate}")
+        log.info(f"✓ Waiting for data...")
+
     
     def connection_lost(self, exc):
         """Called when serial connection is lost"""
         if exc:
-            print(f"✗ Serial connection lost with error: {exc}", file=sys.stderr)
+            log.error(f"✗ Serial connection lost with error: {exc}")
         else:
-            print(f"✗ Serial connection closed", file=sys.stderr)
+            log.info(f"✗ Serial connection closed")
 
 
     def data_received(self, data):
@@ -84,7 +86,7 @@ class CosmoSerial(asyncio.Protocol):
                     # print(f"Received2: {data}")  # Debug: print raw data received
                     self.callback(message) #Callback returns data to handler
         except Exception as e:
-            print(f"Error in callback: {e}", file= sys.stderr)
+            log.error(f"Error in callback: {e}")
         finally:
             self.buffer.clear()
 

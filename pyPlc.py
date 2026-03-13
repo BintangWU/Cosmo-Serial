@@ -1,31 +1,45 @@
 import rk_mcprotocol as mc
-import time
 import asyncio
+import logging
 
+log = logging.getLogger('plc-control')
 plc: mc = None
+_heartbead_task: asyncio.Task
+_data_reader_task: asyncio.Task
+
 
 async def plc_init(host: str, port: int):
     global plc
     try:
         plc = mc.open_socket(host, port)
+        log.info("PLC connected successfully.")
     except Exception as e:
-        print(f"Error connecting to PLC: {e}")
+        log.error(f"Error connecting to PLC: {e}")
         plc = None
 
 
-async def plc_heartbeat():
-    global plc
+async def plc_start_heartbeat():
+    global _heartbead_task
+    loop = asyncio.get_event_loop()
     
-    while True:
-        if plc:
+    async def heartbeat():
+        while not _heartbead_task.cancelled():
             try:
-                # mc.write_bit(plc, headdevice= 'm0', data_list= [1])
-                mc.write_sign_word(plc, headdevice= 'd0', data_list= [2], signed_type=True)
+                log.info("PLC heartbeat ON")
+                # mc.write_sign_word(plc, headdevice= 'd0', data_list= [2], signed_type=True)
                 await asyncio.sleep(0.5)
                 
-                # mc.write_bit(plc, headdevice= 'm0', data_list= [0])
-                mc.write_sign_word(plc, headdevice= 'd0', data_list= [0], signed_type=True)
+                log.info("PLC heartbeat OFF")
+                # mc.write_sign_word(plc, headdevice= 'd0', data_list= [0], signed_type=True)
                 await asyncio.sleep(0.5)
             except Exception as e:
-                print(f"PLC heartbeat failed: {e}")
-                plc = None
+                log.error(f"Error => {e}")
+    
+    _heartbead_task = loop.create_task(heartbeat())
+    
+
+async def plc_stop_heartbeat():
+    global _heartbead_task
+    _heartbead_task.cancel()
+    await asyncio.gather(_heartbead_task, return_exceptions=True)
+

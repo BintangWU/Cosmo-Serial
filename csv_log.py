@@ -4,8 +4,8 @@ import smbclient
 import csv
 from pydantic import BaseModel
 from typing import List
-from dotenv import load_dotenv  
-load_dotenv()
+# from dotenv import load_dotenv  
+# load_dotenv()
 
 class MeasurementRow(BaseModel):
     step: int
